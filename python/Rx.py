@@ -5,8 +5,10 @@ from numbers import Number
 
 #import pdb # debug only
 
-# possible TODO: write a whole new test suite for these structured errors
 core_types = [ ]
+
+class SchemaError(Exception):
+  pass
 
 ### Utility Functions --------------------------------------------------------
 
@@ -190,7 +192,7 @@ class ArrType(_CoreType):
     self.content_schema = rx.make_schema(schema['contents'])
 
     if schema.get('length'):
-      self.length = Util.make_range_validator(schema['length'])
+      self.length = Util.make_range_check(schema['length'])
 
   def check(self, value):
     return(
@@ -240,7 +242,7 @@ class IntType(_CoreType):
 
     self.range = None
     if 'range' in schema:
-      self.range = Util.make_range_validator(schema['range'])
+      self.range = Util.make_range_check(schema['range'])
 
   def check(self, value):
     return (
@@ -298,7 +300,7 @@ class NumType(_CoreType):
     self.range = None
 
     if schema.get('range'):
-      self.range = Util.make_range_validator(schema['range'])
+      self.range = Util.make_range_check(schema['range'])
 
   def check(self, value):
     return (
@@ -314,7 +316,7 @@ class OneType(_CoreType):
   def subname(): return 'one'
 
   def check(self, value):
-    return isinstance(value, (Number, str))
+    return isinstance(value, (Number, string_types))
 
 
 class RecType(_CoreType):
@@ -418,11 +420,11 @@ class StrType(_CoreType):
 
     self.length = None
     if 'length' in schema:
-      self.length = Util.make_range_validator(schema['length'])
+      self.length = Util.make_range_check(schema['length'])
 
   def check(self, value):
     return (
-      isinstance(value, str) and \
+      isinstance(value, string_types) and \
       (self.value  is None or value == self.value) and \
       (self.length is None or self.length(len(value)))
       )
