@@ -130,14 +130,7 @@ class _CoreType(object):
       raise SchemaError('unknown parameter for //{}'.format(self.subname()))
 
   def check(self, value):
-    try:
-      self.validate(value)
-    except SchemaMismatch:
-      return False
-    return True
-
-  def validate(self, value):
-    raise SchemaMismatch('Tried to validate abstract base schema class')
+    return False
 
 ### Core Schema Types --------------------------------------------------------
 
