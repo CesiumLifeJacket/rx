@@ -4,11 +4,9 @@ import json
 import re
 import pdb
 import os
+from imp import reload
 
 plan(None)
-rx = Rx.Factory({ "register_core_types": True });
-
-isa_ok(rx, Rx.Factory)
 
 index = json.loads(open('spec/index.json').read())
 
@@ -63,13 +61,13 @@ for filename in index:
 schema_names = list(sorted(test_schemata.keys()))
 
 for schema_name in schema_names:
-  rx = Rx.Factory({ "register_core_types": True });
+  reload(Rx) # clears registered types
 
   schema_test_spec = test_schemata[ schema_name ]
 
   if schema_test_spec.get("composedtype", False):
     try:
-      rx.learn_type(schema_test_spec['composedtype']['uri'],
+      Rx.learn_type(schema_test_spec['composedtype']['uri'],
                     schema_test_spec['composedtype']['schema'])
     except Rx.SchemaError as e:
       if schema_test_spec['composedtype'].get("invalid", False):
@@ -82,11 +80,11 @@ for schema_name in schema_names:
       ok(0, "BAD COMPOSED TYPE: schemata %s" % schema_name)
 
     if schema_test_spec['composedtype'].get("prefix", False):
-       rx.add_prefix(schema_test_spec['composedtype']['prefix'][0],
+       Rx.add_prefix(schema_test_spec['composedtype']['prefix'][0],
                      schema_test_spec['composedtype']['prefix'][1])
 
   try:
-    schema = rx.make_schema(schema_test_spec["schema"])
+    schema = Rx.make_schema(schema_test_spec["schema"])
   except Rx.SchemaError as e:
     #pdb.set_trace()
     if schema_test_spec.get("invalid", False):

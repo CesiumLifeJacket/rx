@@ -3,7 +3,9 @@ from six import string_types # for 2-3 compatibility
 import types
 from numbers import Number
 
-import pdb # for debugging only
+_MAX_COLUMNS = 80
+
+# TODO: comments and docstrings
 
 ### Exception Classes --------------------------------------------------------
 
@@ -11,13 +13,12 @@ class SchemaError(Exception):
   pass
 
 class SchemaMismatch(Exception):
-
   def __init__(self, message, schema):
     Exception.__init__(self, message)
     self.type = schema.subname() 
 
+# TODO: sort these classes alphabetically?
 class TypeMismatch(SchemaMismatch):
-  
   def __init__(self, schema, data):
     message = 'must be of type {} (was {})'.format(
       schema.subname(),
@@ -30,7 +31,6 @@ class TypeMismatch(SchemaMismatch):
 
 
 class ValueMismatch(SchemaMismatch):
-  
   def __init__(self, schema, data):
 
     message = 'must equal {} (was {})'.format(
@@ -44,7 +44,6 @@ class ValueMismatch(SchemaMismatch):
  
 
 class RangeMismatch(SchemaMismatch):
-  
   def __init__(self, schema, data):
     
     message = 'must be in range {} (was {})'.format(
@@ -58,7 +57,6 @@ class RangeMismatch(SchemaMismatch):
 
 
 class LengthRangeMismatch(SchemaMismatch):
-
   def __init__(self, schema, data):
     length_range = Range(schema.length)
 
@@ -77,7 +75,6 @@ class LengthRangeMismatch(SchemaMismatch):
 
 
 class MissingFieldMismatch(SchemaMismatch):
-
   def __init__(self, schema, fields):
 
     if len(fields) == 1:
@@ -88,7 +85,7 @@ class MissingFieldMismatch(SchemaMismatch):
       message = 'missing required fields: {}'.format(
         ', '.join(fields)
         )
-      if len(message) >= 80: # if the line is too long
+      if len(message) >= _MAX_COLUMNS: # if the line is too long break it up
         message = 'missing required fields:\n{}'.format(
           _indent('\n'.join(fields))
           )
@@ -98,7 +95,6 @@ class MissingFieldMismatch(SchemaMismatch):
 
 
 class UnknownFieldMismatch(SchemaMismatch):
-
   def __init__(self, schema, fields):
 
     if len(fields) == 1:
@@ -109,7 +105,7 @@ class UnknownFieldMismatch(SchemaMismatch):
       message = 'unknown fields: {}'.format(
         ', '.join(fields)
         )
-      if len(message) >= 80: # if the line is too long
+      if len(message) >= _MAX_COLUMNS: # if the line is too long break it up
         message = 'unknown fields:\n{}'.format(
           _indent('\n'.join(fields))
           )
@@ -117,13 +113,24 @@ class UnknownFieldMismatch(SchemaMismatch):
     SchemaMismatch.__init__(self, message, schema)
     self.fields = fields
 
+class SeqLengthMismatch(SchemaMismatch):
+  def __init__(self, schema, data):
+
+    expected_length = len(schema.content_schema)
+    message = 'sequence must have {} element{} (had {})'.format(
+      expected_length,
+      's'*(expected_length != 1), # plural
+      len(data)
+      )
+
+    SchemaMismatch.__init__(self, message, schema)
+    self.expected_length = expected_length
+    self.value = len(data)
+
 
 class TreeMismatch(SchemaMismatch):
-
   def __init__(self, schema, errors=[], child_errors={}, message=None):
     
-    ## Create error message
-
     error_messages = []
 
     for err in errors:
@@ -223,86 +230,6 @@ class Range(object):
 def _indent(text, level=1, whitespace='  '):
     return '\n'.join(whitespace*level+line for line in text.split('\n'))
 
-    ### Schema Factory Class -----------------------------------------------------
-
-class Factory(object):
-  def __init__(self, register_core_types=True):
-    self.prefix_registry = {
-      '':      'tag:codesimply.com,2008:rx/core/',
-      '.meta': 'tag:codesimply.com,2008:rx/meta/',
-    }
-
-    self.type_registry = {}
-    if register_core_types:
-      for t in core_types: self.register_type(t)
-
-  @staticmethod
-  def _default_prefixes(): pass
-
-  def expand_uri(self, type_name):
-    if re.match('^\w+:', type_name): return type_name
-
-    m = re.match('^/([-._a-z0-9]*)/([-._a-z0-9]+)$', type_name)
-
-    if not m:
-      raise ValueError("couldn't understand type name '{}'".format(type_name))
-
-    prefix, suffix = m.groups()
-
-    if prefix not in self.prefix_registry:
-      raise KeyError(
-        "unknown prefix '{0}' in type name '{}'".format(prefix, type_name)
-      )
-
-    return self.prefix_registry[ prefix ] + suffix
-
-  def add_prefix(self, name, base):
-    if self.prefix_registry.get(name):
-      raise SchemaError("the prefix '{}' is already registered".format(name))
-
-    self.prefix_registry[name] = base;
-
-  def register_type(self, t):
-    t_uri = t.uri()
-
-    if t_uri in self.type_registry:
-      raise ValueError("type already registered for {}".format(t_uri))
-
-    self.type_registry[t_uri] = t
-
-  def learn_type(self, uri, schema):
-    if self.type_registry.get(uri):
-      raise SchemaError(
-        "tried to learn type for already-registered uri {}".format(uri)
-        )
-
-    # make sure schema is valid
-    # should this be in a try/except?
-    self.make_schema(schema)
-
-    self.type_registry[uri] = { 'schema': schema }
-
-  def make_schema(self, schema):
-    if isinstance(schema, string_types):
-      schema = { 'type': schema }
-
-    if not isinstance(schema, dict):
-      raise SchemaError('invalid schema argument to make_schema')
-
-    uri = self.expand_uri(schema['type'])
-
-    if not self.type_registry.get(uri):
-      raise SchemaError("unknown type {}".format(uri))
-
-    type_class = self.type_registry[uri]
-
-    if isinstance(type_class, dict):
-      if not {'type'}.issuperset(schema):
-        raise SchemaError('composed type does not take check arguments')
-      return self.make_schema(type_class['schema'])
-    else:
-      return type_class(schema, self)
-
 ### Core Type Base Class -------------------------------------------------
 
 class _CoreType(object):
@@ -310,7 +237,7 @@ class _CoreType(object):
   def uri(self):
     return 'tag:codesimply.com,2008:rx/core/' + self.subname()
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     if not {'type'}.issuperset(schema):
       raise SchemaError('unknown parameter for //{}'.format(self.subname()))
 
@@ -330,14 +257,14 @@ class AllType(_CoreType):
   @staticmethod
   def subname(): return 'all'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     if not {'type', 'of'}.issuperset(schema):
       raise SchemaError('unknown parameter for //all')
     
     if not schema.get('of'):
       raise SchemaError('no alternatives given in //all of')
 
-    self.alts = [rx.make_schema(s) for s in schema['of']]
+    self.alts = [make_schema(s) for s in schema['of']]
 
   def validate(self, value):
     errors = []
@@ -355,7 +282,7 @@ class AnyType(_CoreType):
   @staticmethod
   def subname(): return 'any'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     self.alts = None
 
     if not {'type', 'of'}.issuperset(schema):
@@ -365,7 +292,7 @@ class AnyType(_CoreType):
       if not schema['of']: 
         raise SchemaError('no alternatives given in //any of')
 
-      self.alts = [ rx.make_schema(alt) for alt in schema['of'] ]
+      self.alts = [ make_schema(alt) for alt in schema['of'] ]
 
   def validate(self, value):
     if self.alts is None:
@@ -389,7 +316,7 @@ class ArrType(_CoreType):
   @staticmethod
   def subname(): return 'arr'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     self.length = None
 
     if not {'type', 'contents', 'length'}.issuperset(schema):
@@ -398,7 +325,7 @@ class ArrType(_CoreType):
     if not schema.get('contents'):
       raise SchemaError('no contents provided for //arr')
 
-    self.content_schema = rx.make_schema(schema['contents'])
+    self.content_schema = make_schema(schema['contents'])
 
     if schema.get('length'):
       self.length = Range(schema['length'])
@@ -455,7 +382,7 @@ class IntType(_CoreType):
   @staticmethod
   def subname(): return 'int'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     if not {'type', 'range', 'value'}.issuperset(schema):
       raise SchemaError('unknown parameter for //int')
 
@@ -484,7 +411,7 @@ class MapType(_CoreType):
   @staticmethod
   def subname(): return 'map'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     self.allowed = set()
 
     if not {'type', 'values'}.issuperset(schema):
@@ -493,7 +420,7 @@ class MapType(_CoreType):
     if not schema.get('values'):
       raise SchemaError('no values given for //map')
 
-    self.value_schema = rx.make_schema(schema['values'])
+    self.value_schema = make_schema(schema['values'])
 
   def validate(self, value):
     if not isinstance(value, dict):
@@ -526,7 +453,7 @@ class NumType(_CoreType):
   @staticmethod
   def subname(): return 'num'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     if not {'type', 'range', 'value'}.issuperset(schema):
       raise SchemaError('unknown parameter for //num')
 
@@ -565,13 +492,13 @@ class RecType(_CoreType):
   @staticmethod
   def subname(): return 'rec'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     if not {'type', 'rest', 'required', 'optional'}.issuperset(schema):
       raise SchemaError('unknown parameter for //rec')
 
     self.known = set()
     self.rest_schema = None
-    if schema.get('rest'): self.rest_schema = rx.make_schema(schema['rest'])
+    if schema.get('rest'): self.rest_schema = make_schema(schema['rest'])
 
     for which in ('required', 'optional'):
       setattr(self, which, {})
@@ -583,7 +510,7 @@ class RecType(_CoreType):
 
         self.known.add(field)
 
-        self.__getattribute__(which)[field] = rx.make_schema(
+        self.__getattribute__(which)[field] = make_schema(
           schema[which][field]
         )
 
@@ -640,18 +567,18 @@ class SeqType(_CoreType):
   @staticmethod
   def subname(): return 'seq'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     if not {'type', 'contents', 'tail'}.issuperset(schema):
       raise SchemaError('unknown parameter for //seq')
 
     if not schema.get('contents'):
       raise SchemaError('no contents provided for //seq')
 
-    self.content_schema = [ rx.make_schema(s) for s in schema['contents'] ]
+    self.content_schema = [ make_schema(s) for s in schema['contents'] ]
 
     self.tail_schema = None
     if (schema.get('tail')):
-      self.tail_schema = rx.make_schema(schema['tail'])
+      self.tail_schema = make_schema(schema['tail'])
 
   def validate(self, value):
     if not isinstance(value, (list, tuple)):
@@ -659,21 +586,15 @@ class SeqType(_CoreType):
 
     errors = []
 
-    if len(value) > len(self.content_schema):
-      if self.tail_schema:
+    if len(value) != len(self.content_schema):
+      if len(value) > len(self.content_schema) and self.tail_schema:
         try:
           self.tail_schema.validate(value[len(self.content_schema):])
         except SchemaMismatch as e:
-          errors.append(e)  
+          errors.append(e)
       else:
-        errors.append(
-          SchemaMismatch('exceeds expected length', self)
-          )
-
-    elif len(value) < len(self.content_schema):
-      errors.append(
-        SchemaMismatch('less than expected length', self)
-        )
+        err = SeqLengthMismatch(self, value)
+        errors.append(err)
 
     child_errors = {}
 
@@ -691,7 +612,7 @@ class StrType(_CoreType):
   @staticmethod
   def subname(): return 'str'
 
-  def __init__(self, schema, rx):
+  def __init__(self, schema):
     if not {'type', 'value', 'length'}.issuperset(schema):
       raise SchemaError('unknown parameter for //str')
 
@@ -715,8 +636,83 @@ class StrType(_CoreType):
     if self.length and not self.length(len(value)):
       raise LengthRangeMismatch(self, value)
 
+### Primary Module Interface -------------------------------------------------
+
+def expand_uri(type_name):
+  if re.match('^\w+:', type_name): return type_name
+
+  m = re.match('^/([-._a-z0-9]*)/([-._a-z0-9]+)$', type_name)
+
+  if not m:
+    raise ValueError("couldn't understand type name '{}'".format(type_name))
+
+  prefix, suffix = m.groups()
+
+  if prefix not in prefix_registry:
+    raise KeyError(
+      "unknown prefix '{0}' in type name '{}'".format(prefix, type_name)
+    )
+
+  return prefix_registry[ prefix ] + suffix
+
+def add_prefix(name, base):
+  if prefix_registry.get(name):
+    raise SchemaError("the prefix '{}' is already registered".format(name))
+
+  prefix_registry[name] = base;
+
+def register_type(t):
+  t_uri = t.uri()
+
+  if t_uri in type_registry:
+    raise ValueError("type already registered for {}".format(t_uri))
+
+  type_registry[t_uri] = t
+
+def learn_type(uri, schema):
+  if type_registry.get(uri):
+    raise SchemaError(
+      "tried to learn type for already-registered uri {}".format(uri)
+      )
+
+  # make sure schema is valid
+  # should this be in a try/except?
+  make_schema(schema)
+
+  type_registry[uri] = { 'schema': schema }
+
+def make_schema(schema):
+  if isinstance(schema, string_types):
+    schema = { 'type': schema }
+
+  if not isinstance(schema, dict):
+    raise SchemaError('invalid schema argument to make_schema')
+
+  uri = expand_uri(schema['type'])
+
+  if not type_registry.get(uri):
+    raise SchemaError("unknown type {}".format(uri))
+
+  type_class = type_registry[uri]
+
+  if isinstance(type_class, dict):
+    if not {'type'}.issuperset(schema):
+      raise SchemaError('composed type does not take check arguments')
+    return make_schema(type_class['schema'])
+  else:
+    return type_class(schema)
+
 core_types = [
   AllType,  AnyType, ArrType, BoolType, DefType,
   FailType, IntType, MapType, NilType,  NumType,
   OneType,  RecType, SeqType, StrType
 ]
+
+prefix_registry = {
+  '':      'tag:codesimply.com,2008:rx/core/',
+  '.meta': 'tag:codesimply.com,2008:rx/meta/',
+}
+
+type_registry = {}
+for t in core_types:
+  register_type(t)
